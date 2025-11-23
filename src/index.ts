@@ -1,13 +1,64 @@
+import { assert } from "console";
+import { IncomingMessage } from "http";
 import * as net from "net";
+import { hostname } from "os";
+
 type TCPConn = {
   socket: net.Socket;
   err: null | Error;
   ended: boolean;
   reader: null | {
     resolve: (value: Buffer) => void;
-    reject: (resason: Error) => void;
+    reject: (reason: Error) => void;
   };
 };
+
+type AcceptItem = {
+  resolve: (value: TCPConn) => void;
+  reject: (reason: Error) => void;
+};
+
+type TCPListener = {
+  server: net.Server;
+  incoming: net.Socket[];
+  accepts: AcceptItem[];
+};
+
+type ListenOptions = {
+  host: string;
+  port: number;
+};
+
+function soListen(options: ListenOptions): TCPListener {
+  const { host, port } = options;
+  const listener = {
+    server: net.createServer({ pauseOnConnect: true }),
+    incoming: [],
+    accepts: [],
+  } as TCPListener;
+
+  listener.server.on("connection", (socket: net.Socket) => {
+    const nextPromise = listener.accepts.shift();
+    if (nextPromise) {
+      nextPromise.resolve(soInit(socket));
+    } else {
+      listener.incoming.push(socket);
+    }
+  });
+  listener.server.listen(port, host);
+  return listener;
+}
+
+function soAccept(listener: TCPListener): Promise<TCPConn> {
+  return new Promise((resolve, reject) => {
+    const nextSocket = listener.incoming.shift();
+    if (nextSocket) {
+      resolve(soInit(nextSocket));
+    } else {
+      listener.accepts.push({ resolve: resolve, reject: reject });
+    }
+  });
+}
 
 function soInit(socket: net.Socket): TCPConn {
   const conn: TCPConn = {
@@ -73,8 +124,7 @@ function soWrite(conn: TCPConn, data: Buffer): Promise<void> {
 }
 
 // echo server
-async function serveClient(socket: net.Socket): Promise<void> {
-  const conn: TCPConn = soInit(socket);
+async function serveClient(conn: TCPConn): Promise<void> {
   while (true) {
     const data = await soRead(conn);
     if (data.length === 0) {
@@ -87,16 +137,23 @@ async function serveClient(socket: net.Socket): Promise<void> {
   }
 }
 
-async function newConn(socket: net.Socket): Promise<void> {
-  console.log("new connection", socket.remoteAddress, socket.remotePort);
+async function newConn(conn: TCPConn): Promise<void> {
+  console.log(
+    "new connection",
+    conn.socket.remoteAddress,
+    conn.socket.remotePort
+  );
   try {
-    await serveClient(socket);
+    await serveClient(conn);
   } catch (exc) {
     console.error("exception: ", exc);
   } finally {
-    socket.destroy();
+    conn.socket.destroy();
   }
 }
-const server = net.createServer({ pauseOnConnect: true });
-server.on("connection", newConn);
-server.listen({ host: "127.0.0.1", port: 1234 });
+
+const listener = soListen({ host: "127.0.0.1", port: 1234 });
+while (true) {
+  const conn = await soAccept(listener);
+  newConn(conn);
+}

@@ -1,9 +1,9 @@
-type DynBuf = {
+export type DynBuf = {
   data: Buffer;
   length: number;
 };
 
-function bufPush(buf: DynBuf, data: Buffer): void {
+export function bufPush(buf: DynBuf, data: Buffer): void {
   const newLen = buf.length + data.length;
   if (buf.data.length < newLen) {
     let cap = Math.max(buf.data.length, 32);
@@ -18,12 +18,12 @@ function bufPush(buf: DynBuf, data: Buffer): void {
   buf.length = newLen;
 }
 
-function bufPop(buf: DynBuf, len: number): void {
+export function bufPop(buf: DynBuf, len: number): void {
   buf.data.copyWithin(0, len, buf.length);
   buf.length -= len;
 }
 
-function cutMessage(buf: DynBuf): null | Buffer {
+export function cutMessage(buf: DynBuf): null | Buffer {
   const idx = buf.data.subarray(0, buf.length).indexOf("\n");
   if (idx < 0) {
     return null;

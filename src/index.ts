@@ -1,10 +1,6 @@
-import { assert } from "console";
-import { Socket } from "dgram";
-import { IncomingMessage } from "http";
 import * as net from "net";
-import { hostname } from "os";
-import { constrainedMemory } from "process";
-
+import type { DynBuf } from "./message";
+import { cutMessage, bufPush } from "./message";
 type TCPConn = {
   socket: net.Socket;
   err: null | Error;
@@ -34,7 +30,7 @@ type ListenOptions = {
 function soListen(options: ListenOptions): TCPListener {
   const { host, port } = options;
   const listener = {
-    server: net.createServer({ pauseOnConnect: true }),
+    server: net.createServer(),
     incoming: [],
     accepts: [],
   } as TCPListener;
@@ -126,8 +122,7 @@ function soWrite(conn: TCPConn, data: Buffer): Promise<void> {
 }
 
 // echo server
-async function serveClient(socket: net.Socket): Promise<void> {
-  const conn: TCPConn = soInit(socket);
+async function serveClient(conn: TCPConn): Promise<void> {
   const buf: DynBuf = { data: Buffer.alloc(0), length: 0 };
   while (true) {
     const msg: null | Buffer = cutMessage(buf);
@@ -142,7 +137,6 @@ async function serveClient(socket: net.Socket): Promise<void> {
     }
     if (msg.equals(Buffer.from("quit\n"))) {
       await soWrite(conn, Buffer.from("Bye\n"));
-      socket.destroy();
       return;
     } else {
       const reply = Buffer.concat([Buffer.from("Echo: "), msg]);

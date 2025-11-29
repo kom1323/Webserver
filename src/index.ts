@@ -123,7 +123,7 @@ function soWrite(conn: TCPConn, data: Buffer): Promise<void> {
 
 // echo server
 async function serveClient(conn: TCPConn): Promise<void> {
-  const buf: DynBuf = { data: Buffer.alloc(0), length: 0 };
+  const buf: DynBuf = { data: Buffer.alloc(0), length: 0, pos: 0 };
   while (true) {
     const msg: null | Buffer = cutMessage(buf);
     if (!msg) {

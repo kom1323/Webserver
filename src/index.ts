@@ -1,7 +1,9 @@
 import { assert } from "console";
+import { Socket } from "dgram";
 import { IncomingMessage } from "http";
 import * as net from "net";
 import { hostname } from "os";
+import { constrainedMemory } from "process";
 
 type TCPConn = {
   socket: net.Socket;
@@ -124,16 +126,28 @@ function soWrite(conn: TCPConn, data: Buffer): Promise<void> {
 }
 
 // echo server
-async function serveClient(conn: TCPConn): Promise<void> {
+async function serveClient(socket: net.Socket): Promise<void> {
+  const conn: TCPConn = soInit(socket);
+  const buf: DynBuf = { data: Buffer.alloc(0), length: 0 };
   while (true) {
-    const data = await soRead(conn);
-    if (data.length === 0) {
-      console.log("end connection");
-      break;
+    const msg: null | Buffer = cutMessage(buf);
+    if (!msg) {
+      const data = await soRead(conn);
+      bufPush(buf, data);
+      if (data.length === 0) {
+        console.log("end connection");
+        break;
+      }
+      continue;
     }
-
-    console.log("data", data);
-    await soWrite(conn, data);
+    if (msg.equals(Buffer.from("quit\n"))) {
+      await soWrite(conn, Buffer.from("Bye\n"));
+      socket.destroy();
+      return;
+    } else {
+      const reply = Buffer.concat([Buffer.from("Echo: "), msg]);
+      await soWrite(conn, reply);
+    }
   }
 }
 

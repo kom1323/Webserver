@@ -1,6 +1,7 @@
 import * as net from "net";
-import type { DynBuf } from "./message";
-import { cutMessage, bufPush } from "./message";
+import type { DynBuf, HTTPReq, HTTPRes, BodyReader } from "./message";
+import { cutMessage, bufPush, splitLines } from "./message";
+import { HTTPError } from "./error";
 type TCPConn = {
   socket: net.Socket;
   err: null | Error;
@@ -125,22 +126,29 @@ function soWrite(conn: TCPConn, data: Buffer): Promise<void> {
 async function serveClient(conn: TCPConn): Promise<void> {
   const buf: DynBuf = { data: Buffer.alloc(0), length: 0, pos: 0 };
   while (true) {
-    const msg: null | Buffer = cutMessage(buf);
+    const msg: null | HTTPReq = cutMessage(buf);
     if (!msg) {
       const data = await soRead(conn);
       bufPush(buf, data);
+      if (data.length === 0 && buf.length === 0) {
+        return; // no more requests
+      }
       if (data.length === 0) {
-        console.log("end connection");
-        break;
+        throw new HTTPError(400, "Enexcpected EOF.");
       }
       continue;
     }
-    if (msg.equals(Buffer.from("quit\n"))) {
-      await soWrite(conn, Buffer.from("Bye\n"));
+
+    const reqBody: BodyReader = readerFromReq(conn, buf, msg);
+    const res: HTTPRes = await handleReq(msg, reqBody);
+    await writeHTTPResp(conn, res);
+    // close the connection for HTTP/1.0
+    if (msg.version === "1.0") {
       return;
-    } else {
-      const reply = Buffer.concat([Buffer.from("Echo: "), msg]);
-      await soWrite(conn, reply);
+    }
+
+    while ((await reqBody.read()).length > 0) {
+      /* empty */
     }
   }
 }
@@ -155,6 +163,18 @@ async function newConn(conn: TCPConn): Promise<void> {
     await serveClient(conn);
   } catch (exc) {
     console.error("exception: ", exc);
+    if (exc instanceof HTTPError) {
+      const resp: HTTPReq = {
+        code: exc.code,
+        headers: [],
+        body: readerFromMemory(Buffer.from(exc.message + "\n")),
+      };
+      try {
+        await writeHTTPResp(conn, resp);
+      } catch (exc) {
+        /* ignore */
+      }
+    }
   } finally {
     conn.socket.destroy();
   }

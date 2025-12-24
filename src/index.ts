@@ -1,32 +1,23 @@
 import * as net from "net";
-import type { DynBuf, HTTPReq, HTTPRes, BodyReader } from "./message";
-import { cutMessage, bufPush, splitLines } from "./message";
+import {
+  cutMessage,
+  soRead,
+  readerFromMemory,
+  writeHTTPResp,
+  readerFromReq,
+  handleReq,
+} from "./message";
+import { bufPush } from "./dynamicBuffer";
 import { HTTPError } from "./error";
-type TCPConn = {
-  socket: net.Socket;
-  err: null | Error;
-  ended: boolean;
-  reader: null | {
-    resolve: (value: Buffer) => void;
-    reject: (reason: Error) => void;
-  };
-};
-
-type AcceptItem = {
-  resolve: (value: TCPConn) => void;
-  reject: (reason: Error) => void;
-};
-
-type TCPListener = {
-  server: net.Server;
-  incoming: net.Socket[];
-  accepts: AcceptItem[];
-};
-
-type ListenOptions = {
-  host: string;
-  port: number;
-};
+import type {
+  ListenOptions,
+  TCPListener,
+  TCPConn,
+  DynBuf,
+  HTTPReq,
+  HTTPRes,
+  BodyReader,
+} from "./types";
 
 function soListen(options: ListenOptions): TCPListener {
   const { host, port } = options;
@@ -88,40 +79,6 @@ function soInit(socket: net.Socket): TCPConn {
   });
   return conn;
 }
-
-function soRead(conn: TCPConn): Promise<Buffer> {
-  console.assert(!conn.reader);
-  return new Promise((resolve, reject) => {
-    if (conn.err) {
-      reject(conn.err);
-      return;
-    }
-    if (conn.ended) {
-      resolve(Buffer.from(""));
-      return;
-    }
-    conn.reader = { resolve: resolve, reject: reject };
-    conn.socket.resume();
-  });
-}
-
-function soWrite(conn: TCPConn, data: Buffer): Promise<void> {
-  console.assert(data.length > 0);
-  return new Promise((resolve, reject) => {
-    if (conn.err) {
-      reject(conn.err);
-      return;
-    }
-    conn.socket.write(data, (err?: Error | null) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve();
-      }
-    });
-  });
-}
-
 // echo server
 async function serveClient(conn: TCPConn): Promise<void> {
   const buf: DynBuf = { data: Buffer.alloc(0), length: 0, pos: 0 };
@@ -138,7 +95,6 @@ async function serveClient(conn: TCPConn): Promise<void> {
       }
       continue;
     }
-
     const reqBody: BodyReader = readerFromReq(conn, buf, msg);
     const res: HTTPRes = await handleReq(msg, reqBody);
     await writeHTTPResp(conn, res);
@@ -164,8 +120,8 @@ async function newConn(conn: TCPConn): Promise<void> {
   } catch (exc) {
     console.error("exception: ", exc);
     if (exc instanceof HTTPError) {
-      const resp: HTTPReq = {
-        code: exc.code,
+      const resp: HTTPRes = {
+        code: exc.statusCode,
         headers: [],
         body: readerFromMemory(Buffer.from(exc.message + "\n")),
       };

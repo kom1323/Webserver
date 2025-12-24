@@ -87,7 +87,7 @@ async function serveClient(conn: TCPConn): Promise<void> {
     if (!msg) {
       const data = await soRead(conn);
       bufPush(buf, data);
-      if (data.length === 0 && buf.length === 0) {
+      if (data.length === 0 && buf.length - buf.pos === 0) {
         return; // no more requests
       }
       if (data.length === 0) {

@@ -5,8 +5,6 @@ const kMaxHeaderLen = 1024 * 8;
 
 export function cutMessage(buf: DynBuf): null | HTTPReq {
   const idx = buf.data.subarray(buf.pos, buf.length).indexOf("\r\n\r\n");
-  console.log("buf.pos = ", buf.pos);
-  console.log("buf.length = ", buf.length);
   if (idx < 0) {
     if (buf.length - buf.pos >= kMaxHeaderLen) {
       throw new HTTPError(413, "header is too large");

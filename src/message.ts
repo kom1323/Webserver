@@ -1,6 +1,6 @@
 import { HTTPError } from "./error";
 import type { DynBuf, HTTPReq, TCPConn, BodyReader, HTTPRes } from "./types";
-import { bufPop, bufPush } from "./dynamicBuffer";
+import { bufPop, bufPush, createBufferedWriter } from "./dynamicBuffer";
 const kMaxHeaderLen = 1024 * 8;
 
 export function cutMessage(buf: DynBuf): null | HTTPReq {
@@ -49,16 +49,18 @@ export async function writeHTTPResp(
   console.assert(!fieldGet(resp.headers, "Content-Length"));
   resp.headers.push(Buffer.from(`Content-Length: ${resp.body.length}`));
 
+  const writer = createBufferedWriter(conn);
   // write the header
-  await soWrite(conn, encodeHTTPResp(resp));
+  await writer.write(encodeHTTPResp(resp));
   // write the body
   while (true) {
     const data = await resp.body.read();
     if (data.length === 0) {
       break;
     }
-    await soWrite(conn, data);
+    await writer.write(data);
   }
+  await writer.flush();
 }
 
 function encodeHTTPResp(resp: HTTPRes): Buffer {

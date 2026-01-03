@@ -22,7 +22,7 @@ import type {
 function soListen(options: ListenOptions): TCPListener {
   const { host, port } = options;
   const listener = {
-    server: net.createServer(),
+    server: net.createServer({ noDelay: true }),
     incoming: [],
     accepts: [],
   } as TCPListener;

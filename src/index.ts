@@ -18,6 +18,7 @@ import type {
   HTTPRes,
   BodyReader,
 } from "./types";
+import BufferPool from "./BufferPool";
 
 function soListen(options: ListenOptions): TCPListener {
   const { host, port } = options;
@@ -115,6 +116,7 @@ async function newConn(conn: TCPConn): Promise<void> {
     conn.socket.remoteAddress,
     conn.socket.remotePort
   );
+
   try {
     await serveClient(conn);
   } catch (exc) {
@@ -133,9 +135,15 @@ async function newConn(conn: TCPConn): Promise<void> {
     }
   } finally {
     conn.socket.destroy();
+    console.log(
+      "connection closed",
+      conn.socket.remoteAddress,
+      conn.socket.remotePort
+    );
   }
 }
 
+BufferPool.getInstance();
 const listener = soListen({ host: "127.0.0.1", port: 1234 });
 while (true) {
   const conn = await soAccept(listener);

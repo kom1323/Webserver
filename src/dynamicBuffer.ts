@@ -1,6 +1,8 @@
 import { DynBuf } from "./types";
 import type { TCPConn } from "./types";
 import { soWrite } from "./message";
+import BufferPool from "./BufferPool";
+
 export type BufferedWriter = {
   write: (data: Buffer) => Promise<void>;
   flush: () => Promise<void>;
@@ -31,26 +33,28 @@ export function bufPop(buf: DynBuf, len: number): void {
   }
 }
 
-export function createBufferedWriter(conn: TCPConn): BufferedWriter {
-  const BUFFER_SIZE = 1024;
-  const _buf = Buffer.alloc(1024);
+export function createBufferedWriter(
+  conn: TCPConn,
+  respBuff: Buffer
+): BufferedWriter {
   let offset = 0;
+  const bufferSize = BufferPool.getInstance().getBufferSize();
 
   return {
     write: async function (data: Buffer): Promise<void> {
       console.assert(data.length > 0);
-      if (data.length > BUFFER_SIZE - offset) {
+      if (data.length > bufferSize - offset) {
         await this.flush();
       }
-      if (data.length > BUFFER_SIZE) {
+      if (data.length > bufferSize) {
         return soWrite(conn, data);
       }
-      const bytesCopied = data.copy(_buf, offset);
+      const bytesCopied = data.copy(respBuff, offset);
       offset += bytesCopied;
     },
     flush: async (): Promise<void> => {
       if (offset === 0) return;
-      const dataToSend = _buf.subarray(0, offset);
+      const dataToSend = respBuff.subarray(0, offset);
       offset = 0;
       return soWrite(conn, dataToSend);
     },

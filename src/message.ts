@@ -1,7 +1,15 @@
 import { HTTPError } from "./error";
 import type { DynBuf, HTTPReq, TCPConn, BodyReader, HTTPRes } from "./types";
-import { bufPop, bufPush, createBufferedWriter } from "./dynamicBuffer";
+import {
+  BufferedWriter,
+  bufPop,
+  bufPush,
+  createBufferedWriter,
+} from "./dynamicBuffer";
+import BufferPool from "./BufferPool";
+
 const kMaxHeaderLen = 1024 * 8;
+const crlfBuffer = Buffer.from("\r\n");
 
 export function cutMessage(buf: DynBuf): null | HTTPReq {
   const idx = buf.data.subarray(buf.pos, buf.length).indexOf("\r\n\r\n");
@@ -49,23 +57,34 @@ export async function writeHTTPResp(
   console.assert(!fieldGet(resp.headers, "Content-Length"));
   resp.headers.push(Buffer.from(`Content-Length: ${resp.body.length}`));
 
-  const writer = createBufferedWriter(conn);
-  // write the header
-  await writer.write(encodeHTTPResp(resp));
-  // write the body
-  while (true) {
-    const data = await resp.body.read();
-    if (data.length === 0) {
-      break;
-    }
-    await writer.write(data);
+  const respBuff = BufferPool.getInstance().borrow();
+  if (!respBuff) {
+    throw new HTTPError(507, "Insufficient Storage");
   }
-  await writer.flush();
+
+  try {
+    const writer = createBufferedWriter(conn, respBuff);
+    // write the header
+    await writeEncodedHTTPResp(writer, resp);
+    // write the body
+    while (true) {
+      const data = await resp.body.read();
+      if (data.length === 0) {
+        break;
+      }
+      await writer.write(data);
+    }
+    await writer.flush();
+  } finally {
+    BufferPool.getInstance().return(respBuff);
+  }
 }
 
-function encodeHTTPResp(resp: HTTPRes): Buffer {
+async function writeEncodedHTTPResp(
+  writer: BufferedWriter,
+  resp: HTTPRes
+): Promise<void> {
   const statusLineBuffer = Buffer.from(`HTTP/1.1 ${resp.code}\r\n`);
-  const crlfBuffer = Buffer.from("\r\n");
 
   let totalLength = statusLineBuffer.length;
   for (const header of resp.headers) {
@@ -74,22 +93,17 @@ function encodeHTTPResp(resp: HTTPRes): Buffer {
   }
   totalLength += crlfBuffer.length;
 
-  const encodedHeaders = Buffer.allocUnsafe(totalLength);
-  let writeOffset = 0;
-
-  statusLineBuffer.copy(encodedHeaders, writeOffset);
-  writeOffset += statusLineBuffer.length;
-  for (const header of resp.headers) {
-    header.copy(encodedHeaders, writeOffset);
-    writeOffset += header.length;
-
-    crlfBuffer.copy(encodedHeaders, writeOffset);
-    writeOffset += crlfBuffer.length;
+  if (totalLength > BufferPool.getInstance().getBufferSize()) {
+    throw new HTTPError(431, "Request Header Fields Too Large");
   }
 
-  crlfBuffer.copy(encodedHeaders, writeOffset);
-  writeOffset += crlfBuffer.length;
-  return encodedHeaders;
+  await writer.write(statusLineBuffer);
+  for (const header of resp.headers) {
+    await writer.write(header);
+    await writer.write(crlfBuffer);
+  }
+
+  await writer.write(crlfBuffer);
 }
 
 function splitLines(data: Buffer): Buffer[] {

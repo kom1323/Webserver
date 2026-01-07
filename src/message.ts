@@ -51,12 +51,13 @@ export async function writeHTTPResp(
   resp: HTTPRes
 ): Promise<void> {
   if (resp.body.length < 0) {
-    throw new Error("TODO: chunked encoding");
+    console.assert(!fieldGet(resp.headers, "Transfer-Encoding:chunked"));
+    resp.headers.push(Buffer.from("Transfer-Encoding: chunked"));
+  } else {
+    console.assert(!fieldGet(resp.headers, "Content-Length"));
+    resp.headers.push(Buffer.from(`Content-Length: ${resp.body.length}`));
   }
   // set the "Content-Length" field
-  console.assert(!fieldGet(resp.headers, "Content-Length"));
-  resp.headers.push(Buffer.from(`Content-Length: ${resp.body.length}`));
-
   const respBuff = BufferPool.getInstance().borrow();
   if (!respBuff) {
     throw new HTTPError(507, "Insufficient Storage");
@@ -67,12 +68,21 @@ export async function writeHTTPResp(
     // write the header
     await writeEncodedHTTPResp(writer, resp);
     // write the body
-    while (true) {
-      const data = await resp.body.read();
-      if (data.length === 0) {
-        break;
+    for (let last = false; !last; ) {
+      let data = await resp.body.read();
+      last = data.length === 0;
+      if (resp.body.length < 0) {
+        // chunked encoding
+        data = Buffer.concat([
+          Buffer.from(data.length.toString(16)),
+          crlfBuffer,
+          data,
+          crlfBuffer,
+        ]);
       }
-      await writer.write(data);
+      if (data.length) {
+        await writer.write(data);
+      }
     }
     await writer.flush();
   } finally {

@@ -7,6 +7,7 @@ import {
   createBufferedWriter,
 } from "./dynamicBuffer";
 import BufferPool from "./BufferPool";
+import { countSheep, type BufferGenerator } from "./sheep";
 
 const kMaxHeaderLen = 1024 * 8;
 const crlfBuffer = Buffer.from("\r\n");
@@ -57,7 +58,7 @@ export async function writeHTTPResp(
     console.assert(!fieldGet(resp.headers, "Content-Length"));
     resp.headers.push(Buffer.from(`Content-Length: ${resp.body.length}`));
   }
-  // set the "Content-Length" field
+
   const respBuff = BufferPool.getInstance().borrow();
   if (!respBuff) {
     throw new HTTPError(507, "Insufficient Storage");
@@ -71,7 +72,8 @@ export async function writeHTTPResp(
     for (let last = false; !last; ) {
       let data = await resp.body.read();
       last = data.length === 0;
-      if (resp.body.length < 0) {
+      const isChunked = resp.body.length < 0;
+      if (isChunked) {
         // chunked encoding
         data = Buffer.concat([
           Buffer.from(data.length.toString(16)),
@@ -82,6 +84,9 @@ export async function writeHTTPResp(
       }
       if (data.length) {
         await writer.write(data);
+      }
+      if (isChunked) {
+        await writer.flush();
       }
     }
     await writer.flush();
@@ -390,6 +395,9 @@ export async function handleReq(
     case "/echo":
       resp = body;
       break;
+    case "/sheep":
+      resp = readerFromGenerator(countSheep());
+      break;
     default:
       resp = readerFromMemory(Buffer.from("hello world.\n"));
       break;
@@ -413,6 +421,21 @@ export function readerFromMemory(data: Buffer): BodyReader {
       } else {
         done = true;
         return data;
+      }
+    },
+  };
+}
+
+function readerFromGenerator(gen: BufferGenerator): BodyReader {
+  return {
+    length: -1,
+    read: async (): Promise<Buffer> => {
+      const r = await gen.next();
+      if (r.done) {
+        return Buffer.from(""); // EOF
+      } else {
+        console.assert(r.value.length > 0);
+        return r.value;
       }
     },
   };

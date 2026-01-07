@@ -80,7 +80,7 @@ function soInit(socket: net.Socket): TCPConn {
   });
   return conn;
 }
-// echo server
+// server loop
 async function serveClient(conn: TCPConn): Promise<void> {
   const buf: DynBuf = { data: Buffer.alloc(0), length: 0, pos: 0 };
   while (true) {

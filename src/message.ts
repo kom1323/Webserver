@@ -317,10 +317,10 @@ export function readerFromReq(
     return readerFromConnLength(conn, buf, bodyLen);
   } else if (chunked) {
     // chunked encoding
-    throw new HTTPError(501, "TODO: chuncked");
+    return readerFromGenerator(readChunks(conn, buf));
   } else {
-    // read the rest of the connection
-    throw new HTTPError(501, "TODO");
+    // read the rest of the connection (HTTP/1.0 compatibility)
+    return readerFromConnEOF(conn, buf);
   }
 }
 
@@ -386,6 +386,35 @@ function readerFromConnLength(
   };
 }
 
+// decode the chuncked encoding and yield the data on the fly
+async function* readChunks(conn: TCPConn, buf: DynBuf): BufferGenerator {
+  for (let last = false; !last; ) {
+    // read the chunk-size line
+    const idx = buf.data.subarray(0, buf.length).indexOf("\r\n");
+    if (idx < 0) {
+      continue;
+    }
+  }
+}
+
+function readerFromConnEOF(conn: TCPConn, buf: DynBuf): BodyReader {
+  return {
+    length: buf.length - buf.pos,
+    read: async (): Promise<Buffer> => {
+      if (buf.length - buf.pos === 0) {
+        const data = await soRead(conn);
+        bufPush(buf, data);
+        if (data.length === 0) {
+          return Buffer.from("");
+        }
+      }
+      const consume = buf.length - buf.pos;
+      const data = Buffer.from(buf.data.subarray(buf.pos, buf.pos + consume));
+      bufPop(buf, consume);
+      return data;
+    },
+  };
+}
 export async function handleReq(
   req: HTTPReq,
   body: BodyReader

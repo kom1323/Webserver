@@ -390,10 +390,37 @@ function readerFromConnLength(
 async function* readChunks(conn: TCPConn, buf: DynBuf): BufferGenerator {
   for (let last = false; !last; ) {
     // read the chunk-size line
-    const idx = buf.data.subarray(0, buf.length).indexOf("\r\n");
+    const idx = buf.data.subarray(buf.pos, buf.length).indexOf("\r\n");
     if (idx < 0) {
+      // need more data
+      const data = await soRead(conn);
+      bufPush(buf, data);
+      if (data.length === 0) {
+        throw new HTTPError(400, "Unexpected EOF");
+      }
       continue;
     }
+
+    let remain = parseInt(
+      buf.data.subarray(buf.pos, buf.pos + idx).toString(),
+      16
+    );
+    bufPop(buf, idx + 2);
+    last = remain === 0;
+
+    //read and yield chunk data
+    while (remain > 0) {
+      if (buf.length === 0) {
+        await bufExpectMore(conn, buf, "chunk data");
+      }
+
+      const consume = Math.min(remain, buf.length);
+      const data = Buffer.from(buf.data.subarray(buf.pos, buf.pos + consume));
+      bufPop(buf, consume);
+      yield data;
+    }
+
+    bufPop(buf, 2);
   }
 }
 

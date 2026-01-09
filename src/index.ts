@@ -92,7 +92,7 @@ async function serveClient(conn: TCPConn): Promise<void> {
         return; // no more requests
       }
       if (data.length === 0) {
-        throw new HTTPError(400, "Enexcpected EOF.");
+        throw new HTTPError(400, "Enexpected EOF");
       }
       continue;
     }

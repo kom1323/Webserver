@@ -49,7 +49,7 @@ function parseHTTPReq(data: Buffer): HTTPReq {
 // send an HTTP response through the socket
 export async function writeHTTPResp(
   conn: TCPConn,
-  resp: HTTPRes
+  resp: HTTPRes,
 ): Promise<void> {
   if (resp.body.length < 0) {
     console.assert(!fieldGet(resp.headers, "Transfer-Encoding:chunked"));
@@ -97,7 +97,7 @@ export async function writeHTTPResp(
 
 async function writeEncodedHTTPResp(
   writer: BufferedWriter,
-  resp: HTTPRes
+  resp: HTTPRes,
 ): Promise<void> {
   const statusLineBuffer = Buffer.from(`HTTP/1.1 ${resp.code}\r\n`);
 
@@ -182,7 +182,7 @@ function validateHeaderName(h: Buffer): Boolean {
       "}",
       " ",
       "\t",
-    ].map((sep) => sep.charCodeAt(0))
+    ].map((sep) => sep.charCodeAt(0)),
   );
 
   const ctlArray = Array.from(Array(32).keys());
@@ -291,7 +291,7 @@ function parseDec(numString: string): number {
 export function readerFromReq(
   conn: TCPConn,
   buf: DynBuf,
-  req: HTTPReq
+  req: HTTPReq,
 ): BodyReader {
   let bodyLen = -1;
   const contentLen = fieldGet(req.headers, "Content-Length");
@@ -304,7 +304,7 @@ export function readerFromReq(
   const bodyAllowed = !(req.method === "GET" || req.method === "HEAD");
   const chunked =
     fieldGet(req.headers, "Transfer-Encoding")?.equals(
-      Buffer.from("chunked")
+      Buffer.from("chunked"),
     ) || false;
   if (!bodyAllowed && (bodyLen > 0 || chunked)) {
     throw new HTTPError(400, "HTTP body not allowed.");
@@ -360,7 +360,7 @@ export function soWrite(conn: TCPConn, data: Buffer): Promise<void> {
 function readerFromConnLength(
   conn: TCPConn,
   buf: DynBuf,
-  remain: number
+  remain: number,
 ): BodyReader {
   return {
     length: remain,
@@ -387,39 +387,43 @@ function readerFromConnLength(
 }
 
 // decode the chuncked encoding and yield the data on the fly
+// Ignores trailer-section
 async function* readChunks(conn: TCPConn, buf: DynBuf): BufferGenerator {
   for (let last = false; !last; ) {
     // read the chunk-size line
     const idx = buf.data.subarray(buf.pos, buf.length).indexOf("\r\n");
     if (idx < 0) {
       // need more data
-      const data = await soRead(conn);
-      bufPush(buf, data);
-      if (data.length === 0) {
-        throw new HTTPError(400, "Unexpected EOF");
-      }
+      await bufExpectMore(conn, buf, "chunk data");
       continue;
     }
 
     let remain = parseInt(
       buf.data.subarray(buf.pos, buf.pos + idx).toString(),
-      16
+      16,
     );
     bufPop(buf, idx + 2);
     last = remain === 0;
 
     //read and yield chunk data
     while (remain > 0) {
-      if (buf.length === 0) {
+      if (buf.length - buf.pos === 0) {
         await bufExpectMore(conn, buf, "chunk data");
+        continue;
       }
 
       const consume = Math.min(remain, buf.length);
       const data = Buffer.from(buf.data.subarray(buf.pos, buf.pos + consume));
       bufPop(buf, consume);
+      remain -= consume;
       yield data;
     }
-
+    while (buf.length - buf.pos < 2) {
+      await bufExpectMore(conn, buf, "chunk data");
+    }
+    if (!buf.data.subarray(buf.pos, buf.pos + 2).equals(crlfBuffer)) {
+      throw new HTTPError(400, "Unexpected EOF");
+    }
     bufPop(buf, 2);
   }
 }
@@ -444,7 +448,7 @@ function readerFromConnEOF(conn: TCPConn, buf: DynBuf): BodyReader {
 }
 export async function handleReq(
   req: HTTPReq,
-  body: BodyReader
+  body: BodyReader,
 ): Promise<HTTPRes> {
   let resp: BodyReader;
   switch (req.uri.toString("latin1")) {
@@ -495,4 +499,16 @@ function readerFromGenerator(gen: BufferGenerator): BodyReader {
       }
     },
   };
+}
+
+async function bufExpectMore(conn: TCPConn, buf: DynBuf, dataType: string) {
+  switch (dataType) {
+    case "chunk data":
+      const data = await soRead(conn);
+      bufPush(buf, data);
+      if (data.length === 0) {
+        throw new HTTPError(400, "Unexpected EOF");
+      }
+      break;
+  }
 }

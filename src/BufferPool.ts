@@ -1,30 +1,39 @@
+export enum BufferTier {
+    Normal = 8192, // 8KB
+    Big = 655536, // 64KB
+}
 export default class BufferPool {
-  private static instance: BufferPool;
-  private pool: Buffer[] = [];
-  private readonly BufferSize: number = 8192; //8KB
+    private static instance: BufferPool;
+    private normalPool: Buffer[] = [];
+    private bigPool: Buffer[] = [];
 
-  private constructor(poolSize: number) {
-    for (let i = 0; i < poolSize; i++) {
-      this.pool.push(Buffer.alloc(this.BufferSize));
+    private constructor(poolSize: number, bigPoolSize: number) {
+        for (let i = 0; i < poolSize; i++) {
+            this.normalPool.push(Buffer.allocUnsafe(BufferTier.Normal));
+        }
+        for (let i = 0; i < bigPoolSize; i++) {
+            this.bigPool.push(Buffer.allocUnsafe(BufferTier.Big));
+        }
     }
-  }
 
-  public static getInstance(poolSize = 10): BufferPool {
-    if (!this.instance) {
-      this.instance = new BufferPool(poolSize);
+    public static getInstance(poolSize = 10, bigPoolSize = 2): BufferPool {
+        if (!this.instance) {
+            this.instance = new BufferPool(poolSize, bigPoolSize);
+        }
+        return this.instance;
     }
-    return this.instance;
-  }
 
-  public borrow(): Buffer | undefined {
-    return this.pool.pop();
-  }
+    public borrow(tier: BufferTier = BufferTier.Normal): Buffer | undefined {
+        return tier === BufferTier.Big
+            ? this.bigPool.pop()
+            : this.normalPool.pop();
+    }
 
-  public return(buf: Buffer): void {
-    this.pool.push(buf);
-  }
-
-  public getBufferSize() {
-    return this.BufferSize;
-  }
+    public return(buf: Buffer): void {
+        if (buf.length === BufferTier.Big) {
+            this.bigPool.push(buf);
+        } else {
+            this.normalPool.push(buf);
+        }
+    }
 }

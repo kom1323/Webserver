@@ -53,3 +53,10 @@ export type BodyReader = {
     //optional cleanups
     close?: () => Promise<void>;
 };
+
+// range-spec = int-range
+//               / suffix-range
+//               / other-range
+// int-range = first-pos "-" [ last-pos ]
+// suffix-range = "-" suffix-length
+export type HTTPRange = [number, number | null] | number;

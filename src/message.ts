@@ -97,6 +97,11 @@ export async function writeHTTPResp(
     }
 }
 
+export async function writeHTTPHeader(
+    conn: TCPConn,
+    resp: HTTPRes,
+): Promise<void> {}
+
 async function writeEncodedHTTPResp(
     writer: BufferedWriter,
     resp: HTTPRes,
@@ -210,7 +215,7 @@ function validateHeaderName(h: Buffer): Boolean {
     return true;
 }
 
-function fieldGet(headers: Buffer[], key: string): null | Buffer {
+export function fieldGet(headers: Buffer[], key: string): null | Buffer {
     const keyBuff = Buffer.from(key.toLowerCase());
     outerLoop: for (const buf of headers) {
         let idx = buf.indexOf(":");
@@ -464,7 +469,7 @@ export async function handleReq(
         //server files from the current working directory
         // FIXME: prevent escaping by '..'
 
-        return await serveStaticFile(uri.slice(1));
+        return await serveStaticFile(req, uri.slice(1));
     }
     switch (req.uri.toString("latin1")) {
         case "/echo":

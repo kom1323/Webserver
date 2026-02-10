@@ -206,7 +206,6 @@ async function staticFileResp(
             code: 206,
             headers: [
                 Buffer.from(`Content-Range: bytes ${start}-${end - 1}/${size}`),
-                Buffer.from(`Content-Length: ${end - start}`),
             ],
             body: reader,
         };

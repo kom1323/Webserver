@@ -1,7 +1,7 @@
 import { DynBuf } from "./types";
 import type { TCPConn } from "./types";
 import { soWrite } from "./message";
-import BufferPool, { BufferTier } from "./BufferPool";
+import { BufferTier } from "./BufferPool";
 
 export type BufferedWriter = {
     write: (data: Buffer) => Promise<void>;

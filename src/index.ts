@@ -6,8 +6,10 @@ import {
     writeHTTPResp,
     readerFromReq,
     handleReq,
+    writeHTTPHeader,
+    writeHTTPBody,
 } from "./message";
-import { bufPush } from "./dynamicBuffer";
+import { bufPush, createBufferedWriter } from "./dynamicBuffer";
 import { HTTPError } from "./error";
 import type {
     ListenOptions,
@@ -98,7 +100,24 @@ async function serveClient(conn: TCPConn): Promise<void> {
         }
         const reqBody: BodyReader = readerFromReq(conn, buf, msg);
         const res: HTTPRes = await handleReq(msg, reqBody);
-        await writeHTTPResp(conn, res);
+
+        // write the http response
+        const respBuff = BufferPool.getInstance().borrow();
+        if (!respBuff) {
+            throw new HTTPError(507, "Insufficient Storage");
+        }
+        const writer = createBufferedWriter(conn, respBuff);
+
+        try {
+            await writeHTTPHeader(conn, res, writer);
+            if (msg.method !== "HEAD") {
+                await writeHTTPBody(conn, res.body, writer);
+            }
+        } finally {
+            BufferPool.getInstance().return(respBuff);
+            await res.body.close?.();
+        }
+
         // close the connection for HTTP/1.0
         if (msg.version === "1.0") {
             return;

@@ -52,45 +52,15 @@ export async function writeHTTPResp(
     conn: TCPConn,
     resp: HTTPRes,
 ): Promise<void> {
-    if (resp.body.length < 0) {
-        console.assert(!fieldGet(resp.headers, "Transfer-Encoding:chunked"));
-        resp.headers.push(Buffer.from("Transfer-Encoding: chunked"));
-    } else {
-        console.assert(!fieldGet(resp.headers, "Content-Length"));
-        resp.headers.push(Buffer.from(`Content-Length: ${resp.body.length}`));
-    }
-
     const respBuff = BufferPool.getInstance().borrow();
     if (!respBuff) {
         throw new HTTPError(507, "Insufficient Storage");
     }
 
+    const writer = createBufferedWriter(conn, respBuff);
     try {
-        const writer = createBufferedWriter(conn, respBuff);
-        // write the header
-        await writeEncodedHTTPResp(writer, resp);
-        // write the body
-        for (let last = false; !last; ) {
-            let data = await resp.body.read();
-            last = data.length === 0;
-            const isChunked = resp.body.length < 0;
-            if (isChunked) {
-                // chunked encoding
-                data = Buffer.concat([
-                    Buffer.from(data.length.toString(16)),
-                    crlfBuffer,
-                    data,
-                    crlfBuffer,
-                ]);
-            }
-            if (data.length) {
-                await writer.write(data);
-            }
-            if (isChunked) {
-                await writer.flush();
-            }
-        }
-        await writer.flush();
+        await writeHTTPHeader(conn, resp, writer);
+        await writeHTTPBody(conn, resp.body, writer);
     } finally {
         BufferPool.getInstance().return(respBuff);
         await resp.body.close?.();
@@ -100,7 +70,47 @@ export async function writeHTTPResp(
 export async function writeHTTPHeader(
     conn: TCPConn,
     resp: HTTPRes,
-): Promise<void> {}
+    writer: BufferedWriter,
+): Promise<void> {
+    if (resp.body.length < 0) {
+        console.assert(!fieldGet(resp.headers, "Transfer-Encoding:chunked"));
+        resp.headers.push(Buffer.from("Transfer-Encoding: chunked"));
+    } else {
+        console.assert(!fieldGet(resp.headers, "Content-Length"));
+        resp.headers.push(Buffer.from(`Content-Length: ${resp.body.length}`));
+    }
+
+    // write the header
+    await writeEncodedHTTPResp(writer, resp);
+}
+
+export async function writeHTTPBody(
+    conn: TCPConn,
+    reader: BodyReader,
+    writer: BufferedWriter,
+): Promise<void> {
+    for (let last = false; !last; ) {
+        let data = await reader.read();
+        last = data.length === 0;
+        const isChunked = reader.length < 0;
+        if (isChunked) {
+            // chunked encoding
+            data = Buffer.concat([
+                Buffer.from(data.length.toString(16)),
+                crlfBuffer,
+                data,
+                crlfBuffer,
+            ]);
+        }
+        if (data.length) {
+            await writer.write(data);
+        }
+        if (isChunked) {
+            await writer.flush();
+        }
+    }
+    await writer.flush();
+}
 
 async function writeEncodedHTTPResp(
     writer: BufferedWriter,

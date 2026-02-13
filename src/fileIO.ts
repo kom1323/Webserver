@@ -180,6 +180,25 @@ async function staticFileResp(
     } catch {
         return resp416(size);
     }
+    const { start, end } = setStartAndEnd(range, size);
+    const reader: BodyReader = readerFromStaticFile(fp, start, end);
+    if (start === 0 && end === size) {
+        return { code: 200, headers: [], body: reader };
+    } else {
+        return {
+            code: 206,
+            headers: [
+                Buffer.from(`Content-Range: bytes ${start}-${end - 1}/${size}`),
+            ],
+            body: reader,
+        };
+    }
+}
+
+function setStartAndEnd(
+    range: HTTPRange,
+    size: number,
+): { start: number; end: number } {
     let start, end;
     if (typeof range === "number") {
         start = size - range;
@@ -197,17 +216,5 @@ async function staticFileResp(
     // validation
     start = Math.max(start, 0);
     end = Math.min(end, size);
-
-    const reader: BodyReader = readerFromStaticFile(fp, start, end);
-    if (start === 0 && end === size) {
-        return { code: 200, headers: [], body: reader };
-    } else {
-        return {
-            code: 206,
-            headers: [
-                Buffer.from(`Content-Range: bytes ${start}-${end - 1}/${size}`),
-            ],
-            body: reader,
-        };
-    }
+    return { start, end };
 }

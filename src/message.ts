@@ -280,6 +280,17 @@ export function fieldGet(headers: Buffer[], key: string): null | Buffer {
     return null;
 }
 
+export function fieldGetList(headers: Buffer[], key: string): string[] {
+    const data = fieldGet(headers, key);
+    if (!data) {
+        return [];
+    }
+    return data
+        .toString()
+        .split(",")
+        .map((s) => s.trim());
+}
+
 function parseDec(numString: string): number {
     if (numString.length === 0) {
         return NaN;
@@ -477,8 +488,6 @@ export async function handleReq(
     const uri = req.uri.toString("utf8");
     if (uri.startsWith("/files/")) {
         //server files from the current working directory
-        // FIXME: prevent escaping by '..'
-
         return await serveStaticFile(req, uri.slice(1));
     }
     switch (req.uri.toString("latin1")) {

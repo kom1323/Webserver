@@ -3,6 +3,7 @@ import { BodyReader, HTTPRange, HTTPReq, HTTPRes } from "./types";
 import { readerFromMemory, fieldGet } from "./message";
 import BufferPool, { BufferTier } from "./BufferPool";
 import * as path from "path";
+import { Stats } from "fs";
 
 const FILES_DIR = path.resolve("files");
 export async function serveStaticFile(
@@ -23,8 +24,7 @@ export async function serveStaticFile(
         if (!stat.isFile()) {
             return resp404();
         }
-        const size = stat.size;
-        const resp = await staticFileResp(req, fp, size);
+        const resp = await staticFileResp(req, fp, stat);
         fp = null; // transfered to the BodyReader
         return resp;
     } catch (exec) {
@@ -171,9 +171,30 @@ function parseBytesRanges(r: null | Buffer, size: number): HTTPRange[] {
 async function staticFileResp(
     req: HTTPReq,
     fp: fs.FileHandle,
-    size: number,
+    stat: Stats,
 ): Promise<HTTPRes> {
-    const rangeHeader = fieldGet(req.headers, "Range");
+    const size = stat.size;
+    const ts = Math.floor(stat.mtime.getTime() / 1000); //modified ts
+    const headers: Buffer[] = [
+        // indicate the support for range requests
+        Buffer.from("Accept-Ranges: bytes"),
+        // for cache validation
+        Buffer.from(`Last-Modified: ${stat.mtime.toUTCString()}`),
+    ];
+
+    // check request headers conditions
+    const ifModified = fieldGet(req.headers, "If-Modified-Since");
+    if (ifModified && parseHTTPDate(ifModified.toString("latin1")) === ts) {
+        const empty = readerFromMemory(Buffer.from(""));
+        return { code: 304, headers: headers, body: empty };
+    }
+
+    let rangeHeader = fieldGet(req.headers, "Range");
+    const ifRange = fieldGet(req.headers, "if-Range");
+    if (ifRange && parseHTTPDate(ifRange.toString("latin1")) !== ts) {
+        rangeHeader = null;
+    }
+
     let range;
     try {
         range = parseBytesRanges(rangeHeader, size)[0]; //only one range is supported
@@ -217,4 +238,13 @@ function setStartAndEnd(
     start = Math.max(start, 0);
     end = Math.min(end, size);
     return { start, end };
+}
+
+function parseHTTPDate(dateString: string): number | null {
+    const timestamp = Date.parse(dateString);
+    if (isNaN(timestamp)) {
+        return null;
+    }
+
+    return Math.floor(timestamp / 1000);
 }

@@ -21,6 +21,7 @@ import type {
     BodyReader,
 } from "./types";
 import BufferPool from "./BufferPool";
+import { enableCompresion } from "./stream";
 
 function soListen(options: ListenOptions): TCPListener {
     const { host, port } = options;
@@ -109,6 +110,7 @@ async function serveClient(conn: TCPConn): Promise<void> {
         const writer = createBufferedWriter(conn, respBuff);
 
         try {
+            enableCompresion(msg, res);
             await writeHTTPHeader(conn, res, writer);
             if (msg.method !== "HEAD") {
                 await writeHTTPBody(conn, res.body, writer);

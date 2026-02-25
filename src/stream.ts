@@ -30,9 +30,8 @@ export function enableCompresion(req: HTTPReq, res: HTTPRes): void {
         }
     }
 
-    const isDynamicRoute =
-        // transform the response using gzip
-        res.headers.push(Buffer.from("Content-Encoding: gzip"));
+    // transform the response using gzip
+    res.headers.push(Buffer.from("Content-Encoding: gzip"));
     res.body = gzipFilter(res.body, config.flush);
 }
 

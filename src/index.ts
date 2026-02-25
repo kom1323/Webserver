@@ -111,9 +111,9 @@ async function serveClient(conn: TCPConn): Promise<void> {
 
         try {
             enableCompresion(msg, res);
-            await writeHTTPHeader(conn, res, writer);
+            await writeHTTPHeader(res, writer);
             if (msg.method !== "HEAD") {
-                await writeHTTPBody(conn, res.body, writer);
+                await writeHTTPBody(res.body, writer);
             }
         } finally {
             BufferPool.getInstance().return(respBuff);

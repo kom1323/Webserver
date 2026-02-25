@@ -59,8 +59,8 @@ export async function writeHTTPResp(
 
     const writer = createBufferedWriter(conn, respBuff);
     try {
-        await writeHTTPHeader(conn, resp, writer);
-        await writeHTTPBody(conn, resp.body, writer);
+        await writeHTTPHeader(resp, writer);
+        await writeHTTPBody(resp.body, writer);
     } finally {
         BufferPool.getInstance().return(respBuff);
         await resp.body.close?.();
@@ -68,7 +68,6 @@ export async function writeHTTPResp(
 }
 
 export async function writeHTTPHeader(
-    conn: TCPConn,
     resp: HTTPRes,
     writer: BufferedWriter,
 ): Promise<void> {
@@ -85,7 +84,6 @@ export async function writeHTTPHeader(
 }
 
 export async function writeHTTPBody(
-    conn: TCPConn,
     reader: BodyReader,
     writer: BufferedWriter,
 ): Promise<void> {

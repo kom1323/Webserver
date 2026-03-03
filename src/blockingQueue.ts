@@ -4,49 +4,55 @@ type Queue<T> = {
     close(): void;
 };
 
-// a multi-producer, multi-consumer, and 0-capacity queue.
+// a multi-producer, multi-consumer, and n-capacity queue.
 function createQueue<T>(capacity: number): Queue<T> {
     type Taker = (item: T | null) => void; // fulfill a consumer
-    type Giver = (take: Taker) => void; // wake up a producer
     type Rejector = (err: Error) => void;
-    const producers: { give: Giver; reject: Rejector }[] = [];
+    type resolver = () => void;
+    const buffer: T[] = [];
+    const producers: { done: resolver; reject: Rejector; item: T }[] = [];
     const consumers: Taker[] = [];
     let closed = false;
     return {
         pushBack: (item: T): Promise<void> => {
             return new Promise<void>((done: () => void, reject) => {
-                if (capacity === 0) {
-                    return reject(new Error("queue full"));
-                }
                 if (closed) {
                     return reject(new Error("queue closed."));
                 }
-                const give: Giver = (take: Taker) => {
-                    take(item);
-                    done();
-                };
+
                 if (consumers.length) {
-                    // consumers are waiting
-                    capacity++;
-                    give(consumers.shift()!);
-                } else {
-                    capacity--;
-                    producers.push({ give, reject });
+                    consumers.shift()!(item);
+                    return done();
                 }
+                if (buffer.length < capacity) {
+                    buffer.push(item);
+                    return done();
+                }
+                producers.push({ done, reject, item });
             });
         },
         popFront: (): Promise<T | null> => {
-            return new Promise<T | null>((take: Taker, reject) => {
+            return new Promise<T | null>((take: Taker) => {
                 if (closed) {
                     return take(null);
                 }
-                if (producers.length) {
-                    // producers are waiting
-                    producers.shift()!.give(take);
-                } else {
-                    // wait for a consumer
-                    consumers.push(take);
+                if (buffer.length) {
+                    take(buffer.shift()!);
+                    if (producers.length) {
+                        const nextProducer = producers.shift()!;
+                        buffer.push(nextProducer.item);
+                        return nextProducer.done();
+                    }
+                    return;
                 }
+
+                if (producers.length) {
+                    const nextProducer = producers.shift()!;
+                    take(nextProducer.item);
+                    return nextProducer.done();
+                }
+                // wait for a consumer
+                consumers.push(take);
             });
         },
         close: () => {

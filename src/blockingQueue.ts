@@ -5,7 +5,7 @@ type Queue<T> = {
 };
 
 // a multi-producer, multi-consumer, and 0-capacity queue.
-function createQueue<T>(): Queue<T> {
+function createQueue<T>(capacity: number): Queue<T> {
     type Taker = (item: T | null) => void; // fulfill a consumer
     type Giver = (take: Taker) => void; // wake up a producer
     type Rejector = (err: Error) => void;
@@ -14,26 +14,32 @@ function createQueue<T>(): Queue<T> {
     let closed = false;
     return {
         pushBack: (item: T): Promise<void> => {
-            return new Promise<void>((done: () => void) => {
+            return new Promise<void>((done: () => void, reject) => {
+                if (capacity === 0) {
+                    return reject(new Error("queue full"));
+                }
+                if (closed) {
+                    return reject(new Error("queue closed."));
+                }
                 const give: Giver = (take: Taker) => {
                     take(item);
                     done();
                 };
-                const reject: Rejector = (err: Error) => {
-                    throw err;
-                };
-                if (closed) {
-                }
                 if (consumers.length) {
                     // consumers are waiting
+                    capacity++;
                     give(consumers.shift()!);
                 } else {
+                    capacity--;
                     producers.push({ give, reject });
                 }
             });
         },
         popFront: (): Promise<T | null> => {
-            return new Promise<T | null>((take: Taker) => {
+            return new Promise<T | null>((take: Taker, reject) => {
+                if (closed) {
+                    return take(null);
+                }
                 if (producers.length) {
                     // producers are waiting
                     producers.shift()!.give(take);
@@ -45,6 +51,7 @@ function createQueue<T>(): Queue<T> {
         },
         close: () => {
             // unblock any waiting producers or consumers
+            if (closed) return;
             closed = true;
             while (producers.length) {
                 producers.shift()!.reject(new Error("queue closed."));

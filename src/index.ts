@@ -8,6 +8,7 @@ import {
     handleReq,
     writeHTTPHeader,
     writeHTTPBody,
+    readerFromConnEOF,
 } from "./message";
 import { bufPush, createBufferedWriter } from "./dynamicBuffer";
 import { HTTPError } from "./error";
@@ -19,9 +20,11 @@ import type {
     HTTPReq,
     HTTPRes,
     BodyReader,
+    WSApplication,
 } from "./types";
 import BufferPool from "./BufferPool";
 import { enableCompresion } from "./stream";
+import { getWSApp, handleWS } from "./websocket";
 
 function soListen(options: ListenOptions): TCPListener {
     const { host, port } = options;
@@ -99,9 +102,16 @@ async function serveClient(conn: TCPConn): Promise<void> {
             }
             continue;
         }
-        const reqBody: BodyReader = readerFromReq(conn, buf, msg);
-        const res: HTTPRes = await handleReq(msg, reqBody);
-
+        let reqBody: BodyReader;
+        let res: HTTPRes;
+        const wsapp: null | WSApplication = getWSApp(msg);
+        if (wsapp) {
+            reqBody = readerFromConnEOF(conn, buf);
+            res = await handleWS(msg, reqBody, wsapp);
+        } else {
+            reqBody = readerFromReq(conn, buf, msg);
+            res = await handleReq(msg, reqBody);
+        }
         // write the http response
         const respBuff = BufferPool.getInstance().borrow();
         if (!respBuff) {
@@ -110,10 +120,12 @@ async function serveClient(conn: TCPConn): Promise<void> {
         const writer = createBufferedWriter(conn, respBuff);
 
         try {
-            enableCompresion(msg, res);
+            if (!wsapp) {
+                enableCompresion(msg, res);
+            }
             await writeHTTPHeader(res, writer);
             if (msg.method !== "HEAD") {
-                await writeHTTPBody(res.body, writer);
+                await writeHTTPBody(res.body, writer, !!wsapp);
             }
         } finally {
             BufferPool.getInstance().return(respBuff);
@@ -121,7 +133,7 @@ async function serveClient(conn: TCPConn): Promise<void> {
         }
 
         // close the connection for HTTP/1.0
-        if (msg.version === "1.0") {
+        if (msg.version === "1.0" || wsapp) {
             return;
         }
 

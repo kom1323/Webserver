@@ -86,11 +86,12 @@ export async function writeHTTPHeader(
 export async function writeHTTPBody(
     reader: BodyReader,
     writer: BufferedWriter,
+    isWS?: boolean,
 ): Promise<void> {
     for (let last = false; !last; ) {
         let data = await reader.read();
         last = data.length === 0;
-        const isChunked = reader.length < 0;
+        const isChunked = reader.length < 0 && !isWS;
         if (isChunked) {
             // chunked encoding
             data = Buffer.concat([
@@ -458,7 +459,7 @@ async function* readChunks(conn: TCPConn, buf: DynBuf): BufferGenerator {
     }
 }
 
-function readerFromConnEOF(conn: TCPConn, buf: DynBuf): BodyReader {
+export function readerFromConnEOF(conn: TCPConn, buf: DynBuf): BodyReader {
     return {
         length: buf.length - buf.pos,
         read: async (): Promise<Buffer> => {

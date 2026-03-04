@@ -1,5 +1,14 @@
 import { createQueue, Queue } from "./blockingQueue";
-import { BodyReader, WSMsg, WSServer } from "./types";
+import { fieldGet } from "./message";
+import {
+    BodyReader,
+    HTTPReq,
+    HTTPRes,
+    WSApplication,
+    WSMsg,
+    WSServer,
+} from "./types";
+import * as crypto from "crypto";
 
 const WS_DATA_TEXT = 0x01;
 const WS_DATA_BINARY = 0x02;
@@ -150,4 +159,61 @@ async function wsServerRecv(
         // close the message data in case the app is blocking on it
         data?.close();
     }
+}
+
+// map the request to the WS app
+export function getWSApp(req: HTTPReq): null | WSApplication {
+    const upgradeHeader = fieldGet(req.headers, "Upgrade")
+        ?.toString()
+        .toLowerCase();
+    if (upgradeHeader === "websocket") {
+        return echoApp;
+    }
+    return null;
+}
+
+async function echoApp(ws: WSServer): Promise<void> {
+    while (true) {
+        const msg = await ws.recv();
+        if (!msg) break;
+
+        const data = await msg.read();
+
+        await ws.send({
+            type: msg.type,
+            length: data.length,
+            read: async () => data,
+        });
+    }
+}
+
+export async function handleWS(
+    req: HTTPReq,
+    reqBody: BodyReader,
+    app: WSApplication,
+): Promise<HTTPRes> {
+    // handle the WS protocol
+    const [ws, resBody]: [WSServer, BodyReader] = createWSServer(reqBody);
+    // launch the WS application
+    app(ws).finally(ws.close).catch(console.error); // no await
+    // the upgrade response header
+    const key: Buffer = fieldGet(req.headers, "Sec-WebSocket-Key")!;
+    return {
+        code: 101, // Switching Protocol
+        headers: [
+            Buffer.from("Upgrade: websocket"),
+            Buffer.from("Connection: Upgrade"),
+            Buffer.from(`Sec-WebSocket-Accept: ${wsKeyAccept(key)}`),
+        ],
+        body: resBody,
+    };
+}
+
+function wsKeyAccept(key: Buffer): string {
+    return crypto
+        .createHash("sha1")
+        .update(key)
+        .update("258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+        .digest()
+        .toString("base64");
 }

@@ -74,3 +74,5 @@ export type WSServer = {
     recv(): Promise<null | WSMsg>; // null after EOF
     close(): void;
 };
+
+export type WSApplication = (ws: WSServer) => Promise<void>;

@@ -90,8 +90,27 @@ curl --compressed http://localhost:1234/sheep
 # Static file with range request
 curl -H "Range: bytes=0-99" http://localhost:1234/files/test_file.txt
 
-# WebSocket (using websocat or browser)
+# WebSocket (using websocat)
 websocat ws://127.0.0.1:1234/
+```
+
+#### WebSocket in the Browser
+
+Open the browser console and run:
+
+```js
+const socket = new WebSocket('ws://localhost:1234/');
+
+socket.onopen = () => {
+    console.log('Connected to your server!');
+    socket.send('Testing my WebSocket implementation!');
+};
+
+socket.onmessage = (event) => {
+    console.log('Server echoed:', event.data);
+};
+
+socket.onclose = () => console.log('Connection closed');
 ```
 
 ## Project Structure

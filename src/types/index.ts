@@ -60,3 +60,17 @@ export type BodyReader = {
 // int-range = first-pos "-" [ last-pos ]
 // suffix-range = "-" suffix-length
 export type HTTPRange = [number, number | null] | number;
+
+// WebSocket message type
+export type WSMsg = {
+    type: number; // WS_DATA_TEXT, WS_DATA_BINARY
+    length: number; // in bytes; 01 if fragmented
+    read: () => Promise<Buffer>; // empty after EOF
+};
+
+// The WebSocket API
+export type WSServer = {
+    send(msg: WSMsg): Promise<void>; // supports multiple producers
+    recv(): Promise<null | WSMsg>; // null after EOF
+    close(): void;
+};

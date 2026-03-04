@@ -1,11 +1,11 @@
-type Queue<T> = {
+export type Queue<T> = {
     pushBack(item: T): Promise<void>;
     popFront(): Promise<T | null>;
     close(): void;
 };
 
 // a multi-producer, multi-consumer, and n-capacity queue.
-function createQueue<T>(capacity: number): Queue<T> {
+export function createQueue<T>(capacity: number): Queue<T> {
     type Taker = (item: T | null) => void; // fulfill a consumer
     type Rejector = (err: Error) => void;
     type resolver = () => void;

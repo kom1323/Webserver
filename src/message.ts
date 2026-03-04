@@ -71,7 +71,9 @@ export async function writeHTTPHeader(
     resp: HTTPRes,
     writer: BufferedWriter,
 ): Promise<void> {
-    if (resp.body.length < 0) {
+    if (resp.code === 101) {
+        // WebSocket upgrade: no content-length or transfer-encoding
+    } else if (resp.body.length < 0) {
         console.assert(!fieldGet(resp.headers, "Transfer-Encoding:chunked"));
         resp.headers.push(Buffer.from("Transfer-Encoding: chunked"));
     } else {
@@ -104,7 +106,7 @@ export async function writeHTTPBody(
         if (data.length) {
             await writer.write(data);
         }
-        if (isChunked) {
+        if (isChunked || isWS) {
             await writer.flush();
         }
     }

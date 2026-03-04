@@ -124,6 +124,9 @@ async function serveClient(conn: TCPConn): Promise<void> {
                 enableCompresion(msg, res);
             }
             await writeHTTPHeader(res, writer);
+            if (wsapp) {
+                await writer.flush();
+            }
             if (msg.method !== "HEAD") {
                 await writeHTTPBody(res.body, writer, !!wsapp);
             }
